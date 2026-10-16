@@ -22,7 +22,7 @@ from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import DirectoryTree, Footer, Header, Input, RichLog, Static
+from textual.widgets import DirectoryTree, Footer, Header, Input, RichLog, Static, TextArea
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 PYTHON_DIR = PROJECT_ROOT / "python"
@@ -337,6 +337,19 @@ class KataRunnerApp(App):
         margin-bottom: 1;
     }
 
+    #playground-editor {
+        height: 2fr;
+        background: #090d16;
+        border: round #f59e0b;
+        padding: 0 1;
+        margin-bottom: 1;
+        display: none;
+    }
+
+    #playground-editor:focus {
+        border: round #38bdf8;
+    }
+
     #output-box {
         height: 1fr;
         background: #090d16;
@@ -347,13 +360,16 @@ class KataRunnerApp(App):
 
     BINDINGS = [
         Binding("r", "run_selected", "🚀 Ejecutar (R)", show=True),
+        Binding("ctrl+r", "save_and_run_playground", "▶️ Ejecutar Editor (Ctrl+R)", show=True, priority=True),
+        Binding("f5", "save_and_run_playground", "Ejecutar (F5)", show=False, priority=True),
+        Binding("x", "open_playground", "🧪 Playground (X)", show=True),
         Binding("p", "practice_mode", "🎯 Modo Práctica (P)", show=True),
         Binding("h", "show_hints", "💡 Guía/Pistas (H)", show=True),
         Binding("v", "peek_solutions", "👁️ Espiar Solución (V)", show=True),
         Binding("s", "restore_solutions", "♻️ Restaurar (S)", show=True),
         Binding("a", "run_all_audit", "📊 Progreso Global (A)", show=True),
         Binding("slash", "focus_search", "🔍 Buscar (/)", show=True),
-        Binding("escape", "clear_search", "Limpiar Filtro (Esc)", show=False),
+        Binding("escape", "clear_search", "Salir al Árbol (Esc)", show=False, priority=True),
         Binding("c", "clear_output", "🧹 Limpiar (C)", show=True),
         Binding("q", "quit", "❌ Salir (Q)", show=True),
     ]
@@ -363,6 +379,15 @@ class KataRunnerApp(App):
         self.base_dir = base_dir
         self.current_file: Path | None = None
         self.solution_mgr = KataSolutionManager(root_dir=PROJECT_ROOT)
+        self._loading_playground: bool = False
+
+    def _is_playground(self, path: Path | None) -> bool:
+        if path is None:
+            return False
+        try:
+            return path.resolve() == (self.base_dir / "playground.py").resolve()
+        except Exception:
+            return False
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -378,10 +403,18 @@ class KataRunnerApp(App):
             with Vertical(id="workspace"):
                 yield Static(
                     "👉 Selecciona un manual [bold yellow].md[/] o un kata [bold green].py[/] | "
-                    "[bold cyan]P[/]=Practicar de cero  [bold cyan]H[/]=Pistas  [bold cyan]V[/]=Espiar  [bold cyan]S[/]=Restaurar",
+                    "[bold cyan]X[/]=Editar Playground  [bold cyan]P[/]=Practicar  [bold cyan]H[/]=Pistas  [bold cyan]V[/]=Espiar",
                     id="status-bar",
                 )
                 yield RichLog(id="code-preview-box", highlight=True, markup=True, wrap=True)
+                yield TextArea.code_editor(
+                    "",
+                    language="python",
+                    theme="monokai",
+                    id="playground-editor",
+                    show_line_numbers=True,
+                    tab_behavior="indent",
+                )
                 yield RichLog(id="output-box", highlight=True, markup=True, wrap=True)
         yield Footer()
 
@@ -389,12 +422,16 @@ class KataRunnerApp(App):
         preview_box = self.query_one("#code-preview-box", RichLog)
         preview_box.border_title = "📄 Visor de Estudio, Sintaxis y Código"
 
+        editor = self.query_one("#playground-editor", TextArea)
+        editor.border_title = "🧪 Editor en Vivo: python/playground.py  |  Ctrl+R / F5 = Ejecutar  |  Esc = Volver al Árbol"
+
         output_box = self.query_one("#output-box", RichLog)
         output_box.border_title = "💻 Consola de Verificación, Tests & Métricas"
         output_box.write(
             "[bold cyan]Bienvenido a DEV-KATAS PYTHON STUDIO[/bold cyan]\n"
             "• Abre cualquier archivo en [bold yellow]00-cheatsheets-and-reference/[/] para consultar sintaxis, métodos y Big-O.\n"
             "• Abre cualquier kata [bold green].py[/] en los bloques [bold]01[/] a [bold]08[/] para estudiar y ejecutar sus tests.\n"
+            "• Presiona [bold yellow]X[/] (o selecciona [bold]playground.py[/]) para escribir y ejecutar código Python directamente desde la TUI ([bold cyan]Ctrl+R[/] para correr).\n"
             "• Presiona [bold magenta]P[/] sobre un kata para vaciar sus soluciones ([italic]Modo Práctica sin IA[/]), "
             "edítalo en tu IDE, y presiona [bold green]R[/] para validar tus respuestas.\n"
             "• Presiona [bold yellow]/[/] en cualquier momento para buscar una palabra clave (ej. [italic]slice, heapq, decorator, async[/])."
@@ -402,6 +439,7 @@ class KataRunnerApp(App):
 
         tree = self.query_one("#kata-tree", PythonKataTree)
         tree.root.expand()
+        tree.focus()
 
         readme_path = self.base_dir / "00-cheatsheets-and-reference" / "05_syntax_search_index.md"
         if readme_path.exists():
@@ -422,20 +460,71 @@ class KataRunnerApp(App):
             self.run_syntax_search_in_console(query)
         self.query_one("#kata-tree", PythonKataTree).focus()
 
+    @on(TextArea.Changed, "#playground-editor")
+    def handle_playground_changed(self, event: TextArea.Changed) -> None:
+        if self._loading_playground:
+            return
+        playground_path = self.base_dir / "playground.py"
+        try:
+            playground_path.write_text(event.text_area.text, encoding="utf-8")
+        except Exception:
+            pass
+
     @on(DirectoryTree.FileSelected)
     def handle_file_selected(self, event: DirectoryTree.FileSelected) -> None:
         selected_path = Path(event.path)
         self.current_file = selected_path
 
-        if selected_path.suffix == ".md":
+        if self._is_playground(selected_path):
+            self.open_playground_editor(selected_path, focus_editor=True)
+            self.execute_script(selected_path)
+        elif selected_path.suffix == ".md":
             self.load_markdown_preview(selected_path)
         elif selected_path.suffix == ".py":
             self.solution_mgr.ensure_backup(selected_path)
             self.load_code_preview(selected_path)
             self.execute_script(selected_path)
 
-    def load_markdown_preview(self, md_path: Path) -> None:
+    def _show_readonly_preview(self) -> RichLog:
+        editor = self.query_one("#playground-editor", TextArea)
         preview_box = self.query_one("#code-preview-box", RichLog)
+        editor.display = False
+        preview_box.display = True
+        return preview_box
+
+    def open_playground_editor(self, playground_path: Path, focus_editor: bool = True) -> None:
+        preview_box = self.query_one("#code-preview-box", RichLog)
+        editor = self.query_one("#playground-editor", TextArea)
+        status_bar = self.query_one("#status-bar", Static)
+
+        preview_box.display = False
+        editor.display = True
+        editor.border_title = (
+            "🧪 Editor en Vivo: python/playground.py  |  "
+            "Ctrl+R o F5 = Guardar y Ejecutar  |  Esc = Volver al Árbol"
+        )
+        try:
+            content = playground_path.read_text(encoding="utf-8")
+        except Exception:
+            content = 'print("Hola mundo")\n'
+
+        if editor.text != content:
+            self._loading_playground = True
+            try:
+                editor.load_text(content)
+            finally:
+                self._loading_playground = False
+
+        if focus_editor:
+            editor.focus()
+
+        status_bar.update(
+            "🧪 [bold yellow]Editando python/playground.py en vivo[/] (Auto-guardado activo)  |  "
+            "[bold cyan]Ctrl+R[/] / [bold cyan]F5[/] = Ejecutar  |  [bold cyan]Esc[/] = Salir del editor"
+        )
+
+    def load_markdown_preview(self, md_path: Path) -> None:
+        preview_box = self._show_readonly_preview()
         status_bar = self.query_one("#status-bar", Static)
         preview_box.clear()
         rel_path = md_path.relative_to(PROJECT_ROOT)
@@ -448,7 +537,11 @@ class KataRunnerApp(App):
             preview_box.write(f"[bold red]Error leyendo manual Markdown:[/] {exc}")
 
     def load_code_preview(self, script_path: Path, custom_code: str | None = None, title_prefix: str = "📄 Código") -> None:
-        preview_box = self.query_one("#code-preview-box", RichLog)
+        if self._is_playground(script_path) and custom_code is None:
+            self.open_playground_editor(script_path, focus_editor=False)
+            return
+
+        preview_box = self._show_readonly_preview()
         preview_box.clear()
         rel_path = script_path.relative_to(PROJECT_ROOT)
         in_practice, pending, total = self.solution_mgr.is_in_practice_mode(script_path)
@@ -467,12 +560,14 @@ class KataRunnerApp(App):
         status_bar = self.query_one("#status-bar", Static)
         output_box = self.query_one("#output-box", RichLog)
 
+        is_pg = self._is_playground(script_path)
         in_practice, pending, total = self.solution_mgr.is_in_practice_mode(script_path)
-        mode_badge = (
-            f"[bold magenta]🎯 PRÁCTICA ({total - pending}/{total})[/]"
-            if in_practice
-            else "[bold cyan]📚 ESTUDIO[/]"
-        )
+        if is_pg:
+            mode_badge = "[bold yellow]🧪 PLAYGROUND EN VIVO (Ctrl+R)[/]"
+        elif in_practice:
+            mode_badge = f"[bold magenta]🎯 PRÁCTICA ({total - pending}/{total})[/]"
+        else:
+            mode_badge = "[bold cyan]📚 ESTUDIO[/]"
 
         self.call_from_thread(
             status_bar.update,
@@ -513,7 +608,7 @@ class KataRunnerApp(App):
             )
             self.call_from_thread(
                 output_box.write,
-                f"[bold green]✔ Todos los ejercicios verificados con éxito en {elapsed_ms:.1f} ms[/]",
+                f"[bold green]✔ Ejecución completada con éxito en {elapsed_ms:.1f} ms[/]",
             )
             output_box.styles.border = ("round", "#10b981")
         elif in_practice and "PENDIENTE" in (proc.stdout or ""):
@@ -533,7 +628,7 @@ class KataRunnerApp(App):
             )
             self.call_from_thread(
                 output_box.write,
-                f"[bold red]✖ Fallo en la verificación ({elapsed_ms:.1f} ms). Revisa los detalles arriba o presiona 'H' para ver pistas.[/]",
+                f"[bold red]✖ Error en la ejecución ({elapsed_ms:.1f} ms). Revisa el traceback arriba.[/]",
             )
             output_box.styles.border = ("round", "#ef4444")
 
@@ -544,12 +639,28 @@ class KataRunnerApp(App):
 
     def action_clear_search(self) -> None:
         search_input = self.query_one("#search-input", Input)
-        search_input.value = ""
+        if search_input.has_focus and search_input.value:
+            search_input.value = ""
         self.query_one("#kata-tree", PythonKataTree).focus()
+
+    def action_save_and_run_playground(self) -> None:
+        playground_path = self.base_dir / "playground.py"
+        editor = self.query_one("#playground-editor", TextArea)
+        if editor.display:
+            try:
+                playground_path.write_text(editor.text, encoding="utf-8")
+            except Exception:
+                pass
+            self.current_file = playground_path
+            self.execute_script(playground_path)
+        else:
+            self.action_run_selected()
 
     def action_run_selected(self) -> None:
         if self.current_file and self.current_file.exists():
-            if self.current_file.suffix == ".py":
+            if self._is_playground(self.current_file):
+                self.action_save_and_run_playground()
+            elif self.current_file.suffix == ".py":
                 self.load_code_preview(self.current_file)
                 self.execute_script(self.current_file)
             elif self.current_file.suffix == ".md":
@@ -559,10 +670,23 @@ class KataRunnerApp(App):
                 "⚠️ [bold yellow]Selecciona primero un archivo .py o .md en el panel izquierdo.[/]"
             )
 
+    def action_open_playground(self) -> None:
+        playground_path = self.base_dir / "playground.py"
+        if not playground_path.exists():
+            playground_path.write_text('print("Hola mundo")\n', encoding="utf-8")
+        self.current_file = playground_path
+        self.open_playground_editor(playground_path, focus_editor=True)
+        self.execute_script(playground_path)
+
     def action_practice_mode(self) -> None:
         if not self.current_file or self.current_file.suffix != ".py":
             self.query_one("#status-bar", Static).update(
                 "⚠️ [bold yellow]Selecciona un archivo de kata .py para activar el Modo Práctica.[/]"
+            )
+            return
+        if self._is_playground(self.current_file):
+            self.query_one("#status-bar", Static).update(
+                "🧪 [bold yellow]playground.py ya es un editor libre en vivo. Escribe directamente arriba y presiona Ctrl+R.[/]"
             )
             return
         count = self.solution_mgr.enable_practice_mode(self.current_file)
@@ -580,7 +704,7 @@ class KataRunnerApp(App):
             )
             return
         guide_text = self.solution_mgr.extract_study_guide_and_hints(self.current_file)
-        preview_box = self.query_one("#code-preview-box", RichLog)
+        preview_box = self._show_readonly_preview()
         preview_box.clear()
         preview_box.border_title = f"💡 Guía de Sintaxis y Pistas (Sin Spoilers): {self.current_file.name}"
         preview_box.write(Syntax(guide_text, "markdown", theme="monokai", word_wrap=True))

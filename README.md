@@ -25,12 +25,13 @@ uv run katas
 | Tecla | Acción |
 | :---: | :--- |
 | **`Enter` / Clic** | Abre un manual `.md` o carga y ejecuta un archivo de kata `.py` |
+| **`X`** | Abre y ejecuta al instante tu **Playground Rápido** (`python/playground.py`) |
 | **`/`** | Enfoca el **Buscador Rápido de Sintaxis y Conceptos** (`Escape` para limpiar) |
-| **`R`** | Re-ejecuta el kata actual y muestra métricas por ejercicio |
+| **`R`** | Re-ejecuta el kata o playground actual y muestra métricas en tiempo real |
 | **`P`** | **Modo Práctica:** Vacía las soluciones del kata actual (`TODO` / `NotImplementedError`) para resolverlo desde cero |
 | **`H`** | Muestra solo la **Guía de Sintaxis y Pistas** de cada ejercicio (sin spoilers de código) |
 | **`V`** | **Espiar Solución:** Muestra las soluciones de referencia en pantalla sin sobrescribir tu archivo |
-| **`S`** | **Restaurar Solución:** Restaura las soluciones oficiales en el archivo `.py` |
+| **`S`** | **Restaurar Solución:** Restaura las soluciones oficiales (o plantilla base) en el archivo `.py` |
 | **`A`** | Ejecuta la **Auditoría Global** de todos los módulos y muestra tu progreso |
 | **`C`** | Limpia la consola de salida |
 | **`Q`** | Salir |
@@ -49,8 +50,8 @@ uv run katas --practice python/01-syntax-and-primitives/01_strings_and_slicing.p
 # Restaurar las soluciones oficiales de un kata (o todos con `all`):
 uv run katas --restore python/01-syntax-and-primitives/01_strings_and_slicing.py
 
-# Ejecutar un kata individual directamente con Python o con pytest:
-.\.venv\Scripts\python.exe python/01-syntax-and-primitives/01_strings_and_slicing.py
+# Ejecutar tu Playground libre o cualquier kata individual:
+.\.venv\Scripts\python.exe python/playground.py
 .\.venv\Scripts\pytest.exe
 ```
 
@@ -68,6 +69,7 @@ dev-katas/
 │
 ├── python/
 │   ├── README.md                                  # Arquitectura de Python, CPython Internals, Memoria y GIL
+│   ├── playground.py                              # 🧪 Pizarrón rápido de 10s con stdlib importada (Atajo 'X')
 │   ├── 00-cheatsheets-and-reference/              # 📖 Enciclopedia rápida de sintaxis y librería estándar
 │   │   ├── 01_syntax_and_operators_guide.md       # Operadores, slicing, unpacking, f-strings, match/case, ámbitos
 │   │   ├── 02_builtins_and_stdlib_atlas.md        # Built-ins, collections, itertools, functools, heapq, bisect, re
@@ -82,7 +84,8 @@ dev-katas/
 │   ├── 05-concurrency-and-async/                  # ⚡ Bloque 5: Asyncio, streams, threading y multiprocessing (4 katas)
 │   ├── 06-algorithms-and-patterns/                # 🧠 Bloque 6: Patrones algorítmicos y diseño Pythonic (7 katas)
 │   ├── 07-api-and-network-consumption/            # 🌐 Bloque 7: Clientes HTTP offline, resiliencia y cachés (3 katas)
-│   └── 08-fastapi-and-backend-services/           # 🚀 Bloque 8: FastAPI, Pydantic v2, DI, Auth y CRUD (3 katas)
+│   ├── 08-fastapi-and-backend-services/           # 🚀 Bloque 8: FastAPI, Pydantic v2, DI, Auth y CRUD (3 katas)
+│   └── 99-playground/                             # 🎯 Zona de Simulacros (sandbox, interview_sim, async_api_lab)
 │
 ├── php/                                           # Espacio reservado para katas de PHP
 └── frontend-quick/                                # Espacio reservado para retos frontend rápidos
