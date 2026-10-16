@@ -22,7 +22,7 @@ from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import DirectoryTree, Footer, Header, Input, RichLog, Static, TextArea
+from textual.widgets import DirectoryTree, Footer, Header, Input, MarkdownViewer, RichLog, Static, TextArea
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 PYTHON_DIR = PROJECT_ROOT / "python"
@@ -272,8 +272,8 @@ class KataRunnerApp(App):
 
     /* Panel Izquierdo: Buscador y Explorador */
     #sidebar {
-        width: 36%;
-        min-width: 34;
+        width: 32%;
+        min-width: 30;
         height: 1fr;
         background: #1e293b;
         border: round #38bdf8;
@@ -315,7 +315,7 @@ class KataRunnerApp(App):
 
     /* Panel Derecho: Vista de Estudio/Código y Consola */
     #workspace {
-        width: 64%;
+        width: 1fr;
         height: 1fr;
     }
 
@@ -329,12 +329,20 @@ class KataRunnerApp(App):
         margin-bottom: 1;
     }
 
+    #markdown-viewer {
+        height: 2fr;
+        background: #090d16;
+        border: round #38bdf8;
+        margin-bottom: 1;
+    }
+
     #code-preview-box {
         height: 2fr;
         background: #090d16;
         border: round #334155;
         padding: 0 1;
         margin-bottom: 1;
+        display: none;
     }
 
     #playground-editor {
@@ -363,14 +371,23 @@ class KataRunnerApp(App):
         Binding("ctrl+r", "save_and_run_playground", "▶️ Ejecutar Editor (Ctrl+R)", show=True, priority=True),
         Binding("f5", "save_and_run_playground", "Ejecutar (F5)", show=False, priority=True),
         Binding("x", "open_playground", "🧪 Playground (X)", show=True),
-        Binding("p", "practice_mode", "🎯 Modo Práctica (P)", show=True),
-        Binding("h", "show_hints", "💡 Guía/Pistas (H)", show=True),
-        Binding("v", "peek_solutions", "👁️ Espiar Solución (V)", show=True),
+        Binding("b", "toggle_sidebar", "📂 Árbol (B)", show=True),
+        Binding("ctrl+b", "toggle_sidebar", "Árbol (Ctrl+B)", show=False, priority=True),
+        Binding("t", "toggle_console", "💻 Consola (T)", show=True),
+        Binding("ctrl+t", "toggle_console", "Consola (Ctrl+T)", show=False, priority=True),
+        Binding("m", "maximize_console", "🔍 Max Consola (M)", show=True),
+        Binding("f9", "maximize_console", "Max Consola (F9)", show=False, priority=True),
+        Binding("z", "zen_mode", "🧘 Zen (Z)", show=True),
+        Binding("f11", "zen_mode", "Modo Zen (F11)", show=False, priority=True),
+        Binding("i", "toggle_toc", "📑 Índice MD (I)", show=True),
+        Binding("p", "practice_mode", "🎯 Práctica (P)", show=True),
+        Binding("h", "show_hints", "💡 Pistas (H)", show=True),
+        Binding("v", "peek_solutions", "👁️ Espiar (V)", show=True),
         Binding("s", "restore_solutions", "♻️ Restaurar (S)", show=True),
-        Binding("a", "run_all_audit", "📊 Progreso Global (A)", show=True),
+        Binding("a", "run_all_audit", "📊 Auditoría (A)", show=True),
         Binding("slash", "focus_search", "🔍 Buscar (/)", show=True),
         Binding("escape", "clear_search", "Salir al Árbol (Esc)", show=False, priority=True),
-        Binding("c", "clear_output", "🧹 Limpiar (C)", show=True),
+        Binding("c", "clear_output", "🧹 Limpiar (C)", show=False),
         Binding("q", "quit", "❌ Salir (Q)", show=True),
     ]
 
@@ -380,6 +397,8 @@ class KataRunnerApp(App):
         self.current_file: Path | None = None
         self.solution_mgr = KataSolutionManager(root_dir=PROJECT_ROOT)
         self._loading_playground: bool = False
+        self._active_upper_view: str = "markdown"
+        self._console_maximized: bool = False
 
     def _is_playground(self, path: Path | None) -> bool:
         if path is None:
@@ -393,7 +412,7 @@ class KataRunnerApp(App):
         yield Header(show_clock=True)
         with Horizontal(id="main-container"):
             with Vertical(id="sidebar"):
-                yield Static("📂 CURRÍCULO PYTHON (00–08)", id="sidebar-title")
+                yield Static("📂 CURRÍCULO PYTHON (00–99)", id="sidebar-title")
                 yield Input(
                     placeholder="🔍 Buscar sintaxis o método (/)...",
                     id="search-input",
@@ -402,9 +421,14 @@ class KataRunnerApp(App):
 
             with Vertical(id="workspace"):
                 yield Static(
-                    "👉 Selecciona un manual [bold yellow].md[/] o un kata [bold green].py[/] | "
-                    "[bold cyan]X[/]=Editar Playground  [bold cyan]P[/]=Practicar  [bold cyan]H[/]=Pistas  [bold cyan]V[/]=Espiar",
+                    "👉 [bold cyan]B[/]=Colapsar Árbol  [bold cyan]T[/]=Ocultar Consola  "
+                    "[bold cyan]M[/]=Maximizar Consola  [bold cyan]Z[/]=Modo Zen  [bold cyan]X[/]=Playground",
                     id="status-bar",
+                )
+                yield MarkdownViewer(
+                    "",
+                    show_table_of_contents=True,
+                    id="markdown-viewer",
                 )
                 yield RichLog(id="code-preview-box", highlight=True, markup=True, wrap=True)
                 yield TextArea.code_editor(
@@ -419,32 +443,61 @@ class KataRunnerApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
+        md_viewer = self.query_one("#markdown-viewer", MarkdownViewer)
+        md_viewer.can_focus = True
+        md_viewer.border_title = "📖 Lector Markdown Interactivo (I = Mostrar/Ocultar Índice)"
+
         preview_box = self.query_one("#code-preview-box", RichLog)
+        preview_box.can_focus = True
         preview_box.border_title = "📄 Visor de Estudio, Sintaxis y Código"
 
         editor = self.query_one("#playground-editor", TextArea)
-        editor.border_title = "🧪 Editor en Vivo: python/playground.py  |  Ctrl+R / F5 = Ejecutar  |  Esc = Volver al Árbol"
+        editor.border_title = (
+            "🧪 Editor en Vivo: python/playground.py  |  "
+            "Ctrl+R = Ejecutar  |  Ctrl+B = Árbol  |  Ctrl+T = Consola  |  Esc = Salir"
+        )
 
         output_box = self.query_one("#output-box", RichLog)
-        output_box.border_title = "💻 Consola de Verificación, Tests & Métricas"
+        output_box.can_focus = True
+        output_box.border_title = "💻 Consola de Verificación, Tests & Métricas (T = Ocultar | M = Maximizar)"
         output_box.write(
             "[bold cyan]Bienvenido a DEV-KATAS PYTHON STUDIO[/bold cyan]\n"
-            "• Abre cualquier archivo en [bold yellow]00-cheatsheets-and-reference/[/] para consultar sintaxis, métodos y Big-O.\n"
-            "• Abre cualquier kata [bold green].py[/] en los bloques [bold]01[/] a [bold]08[/] para estudiar y ejecutar sus tests.\n"
-            "• Presiona [bold yellow]X[/] (o selecciona [bold]playground.py[/]) para escribir y ejecutar código Python directamente desde la TUI ([bold cyan]Ctrl+R[/] para correr).\n"
-            "• Presiona [bold magenta]P[/] sobre un kata para vaciar sus soluciones ([italic]Modo Práctica sin IA[/]), "
-            "edítalo en tu IDE, y presiona [bold green]R[/] para validar tus respuestas.\n"
-            "• Presiona [bold yellow]/[/] en cualquier momento para buscar una palabra clave (ej. [italic]slice, heapq, decorator, async[/])."
+            "• [bold yellow]Organización de Paneles:[/] Presiona [bold cyan]B[/] (o [bold]Ctrl+B[/]) para colapsar el árbol lateral, "
+            "[bold cyan]T[/] (o [bold]Ctrl+T[/]) para ocultar/mostrar esta consola, [bold cyan]M[/] (o [bold]F9[/]) para maximizar la consola, "
+            "o [bold cyan]Z[/] (o [bold]F11[/]) para Modo Zen a pantalla completa.\n"
+            "• [bold yellow]Lectura Markdown (.md):[/] Usa el lector nativo con tabla de contenidos interactiva ([bold cyan]I[/] para alternar el índice).\n"
+            "• [bold yellow]Playground en Vivo:[/] Presiona [bold cyan]X[/] para escribir código en [bold]playground.py[/] y [bold cyan]Ctrl+R[/] para ejecutarlo."
         )
 
         tree = self.query_one("#kata-tree", PythonKataTree)
         tree.root.expand()
         tree.focus()
 
-        readme_path = self.base_dir / "00-cheatsheets-and-reference" / "05_syntax_search_index.md"
+        readme_path = self.base_dir / "README.md"
+        if not readme_path.exists():
+            readme_path = self.base_dir / "00-cheatsheets-and-reference" / "05_syntax_search_index.md"
         if readme_path.exists():
             self.current_file = readme_path
             self.load_markdown_preview(readme_path)
+
+    def _set_upper_view(self, view_mode: str) -> None:
+        """Activa exactamente uno de los visores superiores: 'markdown', 'code' o 'playground'."""
+        self._active_upper_view = view_mode
+        self._console_maximized = False
+
+        md_viewer = self.query_one("#markdown-viewer", MarkdownViewer)
+        preview_box = self.query_one("#code-preview-box", RichLog)
+        editor = self.query_one("#playground-editor", TextArea)
+
+        md_viewer.display = view_mode == "markdown"
+        preview_box.display = view_mode == "code"
+        editor.display = view_mode == "playground"
+
+    def _ensure_console_visible(self) -> None:
+        """Muestra la consola inferior cuando se ejecuta código o una búsqueda."""
+        output_box = self.query_one("#output-box", RichLog)
+        if not output_box.display:
+            output_box.display = True
 
     @on(Input.Changed, "#search-input")
     def handle_search_changed(self, event: Input.Changed) -> None:
@@ -486,22 +539,17 @@ class KataRunnerApp(App):
             self.execute_script(selected_path)
 
     def _show_readonly_preview(self) -> RichLog:
-        editor = self.query_one("#playground-editor", TextArea)
-        preview_box = self.query_one("#code-preview-box", RichLog)
-        editor.display = False
-        preview_box.display = True
-        return preview_box
+        self._set_upper_view("code")
+        return self.query_one("#code-preview-box", RichLog)
 
     def open_playground_editor(self, playground_path: Path, focus_editor: bool = True) -> None:
-        preview_box = self.query_one("#code-preview-box", RichLog)
+        self._set_upper_view("playground")
         editor = self.query_one("#playground-editor", TextArea)
         status_bar = self.query_one("#status-bar", Static)
 
-        preview_box.display = False
-        editor.display = True
         editor.border_title = (
             "🧪 Editor en Vivo: python/playground.py  |  "
-            "Ctrl+R o F5 = Guardar y Ejecutar  |  Esc = Volver al Árbol"
+            "Ctrl+R = Ejecutar  |  Ctrl+B = Árbol  |  Ctrl+T = Consola  |  Esc = Salir"
         )
         try:
             content = playground_path.read_text(encoding="utf-8")
@@ -519,22 +567,31 @@ class KataRunnerApp(App):
             editor.focus()
 
         status_bar.update(
-            "🧪 [bold yellow]Editando python/playground.py en vivo[/] (Auto-guardado activo)  |  "
-            "[bold cyan]Ctrl+R[/] / [bold cyan]F5[/] = Ejecutar  |  [bold cyan]Esc[/] = Salir del editor"
+            "🧪 [bold yellow]Editando python/playground.py[/]  |  "
+            "[bold cyan]Ctrl+R[/]=Ejecutar  [bold cyan]Ctrl+B[/]=Árbol  [bold cyan]Ctrl+T[/]=Consola  [bold cyan]F11[/]=Zen"
         )
 
     def load_markdown_preview(self, md_path: Path) -> None:
-        preview_box = self._show_readonly_preview()
+        self._set_upper_view("markdown")
+        md_viewer = self.query_one("#markdown-viewer", MarkdownViewer)
+        output_box = self.query_one("#output-box", RichLog)
         status_bar = self.query_one("#status-bar", Static)
-        preview_box.clear()
+
+        # Al abrir un archivo .md, ocultamos la consola automáticamente para dar máxima altura de lectura
+        output_box.display = False
+
         rel_path = md_path.relative_to(PROJECT_ROOT)
-        preview_box.border_title = f"📖 Manual de Referencia: {rel_path}"
+        toc_state = "Visible" if md_viewer.show_table_of_contents else "Oculto"
+        md_viewer.border_title = f"📖 Manual Markdown: {rel_path}  |  📑 Índice: {toc_state} (I)  |  🧘 Zen (Z)"
         try:
             content = md_path.read_text(encoding="utf-8")
-            preview_box.write(Markdown(content))
-            status_bar.update(f"📖 Leyendo referencia: [bold yellow]{rel_path}[/]")
+            md_viewer.document.update(content)
+            status_bar.update(
+                f"📖 Leyendo [bold yellow]{rel_path}[/]  |  "
+                "[bold cyan]B[/]=Colapsar Árbol  [bold cyan]I[/]=Índice MD  [bold cyan]Z[/]=Pantalla Completa  [bold cyan]T[/]=Consola"
+            )
         except Exception as exc:
-            preview_box.write(f"[bold red]Error leyendo manual Markdown:[/] {exc}")
+            md_viewer.document.update(f"# Error leyendo manual Markdown\n\n`{exc}`")
 
     def load_code_preview(self, script_path: Path, custom_code: str | None = None, title_prefix: str = "📄 Código") -> None:
         if self._is_playground(script_path) and custom_code is None:
@@ -559,6 +616,8 @@ class KataRunnerApp(App):
         rel_path = script_path.relative_to(PROJECT_ROOT)
         status_bar = self.query_one("#status-bar", Static)
         output_box = self.query_one("#output-box", RichLog)
+
+        self.call_from_thread(self._ensure_console_visible)
 
         is_pg = self._is_playground(script_path)
         in_practice, pending, total = self.solution_mgr.is_in_practice_mode(script_path)
@@ -604,7 +663,7 @@ class KataRunnerApp(App):
         if proc.returncode == 0:
             badge = (
                 f"✅ [bold green]PASSED[/]  |  {mode_badge}  |  "
-                f"⏱️ [bold yellow]{elapsed_ms:.1f} ms[/]  |  📄 [bold white]{rel_path}[/]"
+                f"⏱️ [bold yellow]{elapsed_ms:.1f} ms[/]  |  📄 [bold white]{rel_path}[/]  |  [bold cyan]M[/]=Max Consola"
             )
             self.call_from_thread(
                 output_box.write,
@@ -624,20 +683,124 @@ class KataRunnerApp(App):
         else:
             badge = (
                 f"❌ [bold red]FAILED (Exit {proc.returncode})[/]  |  {mode_badge}  |  "
-                f"⏱️ [bold yellow]{elapsed_ms:.1f} ms[/]  |  📄 [bold white]{rel_path}[/]"
+                f"⏱️ [bold yellow]{elapsed_ms:.1f} ms[/]  |  📄 [bold white]{rel_path}[/]  |  [bold cyan]M[/]=Max Consola"
             )
             self.call_from_thread(
                 output_box.write,
-                f"[bold red]✖ Error en la ejecución ({elapsed_ms:.1f} ms). Revisa el traceback arriba.[/]",
+                f"[bold red]✖ Error en la ejecución ({elapsed_ms:.1f} ms). Presiona 'M' (o F9) para maximizar la consola.[/]",
             )
             output_box.styles.border = ("round", "#ef4444")
 
         self.call_from_thread(status_bar.update, badge)
 
+    def _focus_active_workspace(self) -> None:
+        if self._console_maximized:
+            self.query_one("#output-box", RichLog).focus()
+        elif self._active_upper_view == "playground":
+            self.query_one("#playground-editor", TextArea).focus()
+        elif self._active_upper_view == "code":
+            self.query_one("#code-preview-box", RichLog).focus()
+        else:
+            self.query_one("#markdown-viewer", MarkdownViewer).focus()
+
+    def action_toggle_sidebar(self) -> None:
+        sidebar = self.query_one("#sidebar", Vertical)
+        status_bar = self.query_one("#status-bar", Static)
+        if sidebar.display:
+            self._focus_active_workspace()
+            sidebar.display = False
+            status_bar.update("📖 [bold green]Árbol lateral colapsado[/] — Espacio horizontal máximo activado ([bold]B[/] / [bold]Ctrl+B[/] para mostrar)")
+        else:
+            sidebar.display = True
+            if self._active_upper_view != "playground":
+                self.query_one("#kata-tree", PythonKataTree).focus()
+            status_bar.update("📂 [bold cyan]Árbol de navegación expandido[/] (Presiona [bold]B[/] o [bold]Ctrl+B[/] para colapsar)")
+
+    def action_toggle_console(self) -> None:
+        output_box = self.query_one("#output-box", RichLog)
+        status_bar = self.query_one("#status-bar", Static)
+
+        if self._console_maximized:
+            self._set_upper_view(self._active_upper_view)
+            output_box.display = False
+            self._focus_active_workspace()
+            status_bar.update("💻 [bold yellow]Consola oculta[/] — Visor/Editor a altura completa ([bold]T[/] / [bold]Ctrl+T[/] para mostrar)")
+            return
+
+        output_box.display = not output_box.display
+        if output_box.display:
+            status_bar.update("💻 [bold green]Consola visible[/] ([bold]T[/] / [bold]Ctrl+T[/] para ocultar | [bold]M[/] / [bold]F9[/] para maximizar)")
+        else:
+            self._focus_active_workspace()
+            status_bar.update("💻 [bold yellow]Consola oculta[/] — Visor/Editor a altura completa ([bold]T[/] / [bold]Ctrl+T[/] para mostrar)")
+
+    def action_maximize_console(self) -> None:
+        output_box = self.query_one("#output-box", RichLog)
+        md_viewer = self.query_one("#markdown-viewer", MarkdownViewer)
+        preview_box = self.query_one("#code-preview-box", RichLog)
+        editor = self.query_one("#playground-editor", TextArea)
+        status_bar = self.query_one("#status-bar", Static)
+
+        if not self._console_maximized:
+            self._console_maximized = True
+            md_viewer.display = False
+            preview_box.display = False
+            editor.display = False
+            output_box.display = True
+            output_box.focus()
+            status_bar.update(
+                "🔍 [bold green]Consola Maximizada a Pantalla Completa[/] — "
+                "Presiona [bold cyan]M[/] (o [bold cyan]F9[/]) para volver al visor/editor"
+            )
+        else:
+            self._set_upper_view(self._active_upper_view)
+            output_box.display = True
+            self._focus_active_workspace()
+            status_bar.update("🔄 [bold cyan]Vista dividida restaurada[/] (Visor superior + Consola inferior)")
+
+    def action_zen_mode(self) -> None:
+        sidebar = self.query_one("#sidebar", Vertical)
+        output_box = self.query_one("#output-box", RichLog)
+        status_bar = self.query_one("#status-bar", Static)
+
+        entering_zen = sidebar.display or output_box.display or self._console_maximized
+        if entering_zen:
+            self._set_upper_view(self._active_upper_view)
+            self._focus_active_workspace()
+            sidebar.display = False
+            output_box.display = False
+            status_bar.update(
+                "🧘 [bold magenta]MODO ZEN ACTIVADO (100% Pantalla Completa)[/] — "
+                "Presiona [bold cyan]Z[/] (o [bold cyan]F11[/]) para restaurar paneles"
+            )
+        else:
+            sidebar.display = True
+            if self._active_upper_view != "markdown":
+                output_box.display = True
+            if self._active_upper_view != "playground":
+                self.query_one("#kata-tree", PythonKataTree).focus()
+            status_bar.update("🔄 [bold cyan]Modo Zen desactivado — Paneles restaurados[/]")
+
+    def action_toggle_toc(self) -> None:
+        md_viewer = self.query_one("#markdown-viewer", MarkdownViewer)
+        status_bar = self.query_one("#status-bar", Static)
+        if not md_viewer.display:
+            status_bar.update("ℹ️ [bold yellow]Abre un archivo .md para alternar su Tabla de Contenidos (I).[/]")
+            return
+        md_viewer.show_table_of_contents = not md_viewer.show_table_of_contents
+        state_str = "mostrada" if md_viewer.show_table_of_contents else "oculta"
+        status_bar.update(f"📑 [bold cyan]Tabla de Contenidos (TOC) {state_str}[/] (Presiona [bold]I[/] para alternar)")
+
     def action_focus_search(self) -> None:
+        sidebar = self.query_one("#sidebar", Vertical)
+        if not sidebar.display:
+            sidebar.display = True
         self.query_one("#search-input", Input).focus()
 
     def action_clear_search(self) -> None:
+        sidebar = self.query_one("#sidebar", Vertical)
+        if not sidebar.display:
+            sidebar.display = True
         search_input = self.query_one("#search-input", Input)
         if search_input.has_focus and search_input.value:
             search_input.value = ""
@@ -646,7 +809,7 @@ class KataRunnerApp(App):
     def action_save_and_run_playground(self) -> None:
         playground_path = self.base_dir / "playground.py"
         editor = self.query_one("#playground-editor", TextArea)
-        if editor.display:
+        if self._active_upper_view == "playground":
             try:
                 playground_path.write_text(editor.text, encoding="utf-8")
             except Exception:
@@ -746,6 +909,7 @@ class KataRunnerApp(App):
     def action_run_all_audit(self) -> None:
         output_box = self.query_one("#output-box", RichLog)
         status_bar = self.query_one("#status-bar", Static)
+        self.call_from_thread(self._ensure_console_visible)
         self.call_from_thread(output_box.clear)
         self.call_from_thread(
             status_bar.update,
@@ -805,6 +969,7 @@ class KataRunnerApp(App):
         self.call_from_thread(status_bar.update, summary)
 
     def run_syntax_search_in_console(self, query: str) -> None:
+        self._ensure_console_visible()
         output_box = self.query_one("#output-box", RichLog)
         output_box.clear()
         table = build_search_results_table(query)

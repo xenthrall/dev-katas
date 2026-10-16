@@ -24,14 +24,20 @@ uv run katas
 #### Atajos dentro de `DEV-KATAS STUDIO`:
 | Tecla | Acción |
 | :---: | :--- |
-| **`Enter` / Clic** | Abre un manual `.md` o carga y ejecuta un archivo de kata `.py` |
-| **`X`** | Abre y ejecuta al instante tu **Playground Rápido** (`python/playground.py`) |
-| **`/`** | Enfoca el **Buscador Rápido de Sintaxis y Conceptos** (`Escape` para limpiar) |
+| **`Enter` / Clic** | Abre un manual `.md` (en el lector nativo Markdown) o carga y ejecuta un kata `.py` |
+| **`X`** | Abre el **Editor en Vivo** de `python/playground.py` (con auto-guardado instantáneo) |
+| **`Ctrl+R` / `F5`** | Guarda y ejecuta al instante `python/playground.py` sin salir del editor |
+| **`B` / `Ctrl+B`** | **Colapsar / Expandir Árbol Lateral:** Aprovecha el 100% del ancho horizontal para leer o programar |
+| **`T` / `Ctrl+T`** | **Ocultar / Mostrar Consola Inferior:** Oculta la terminal (se muestra sola al ejecutar código) |
+| **`M` / `F9`** | **Maximizar / Restaurar Consola:** Expande la terminal a pantalla completa para inspeccionar salidas largas |
+| **`Z` / `F11`** | **Modo Zen (Pantalla Completa):** Oculta árbol y consola a la vez para máxima concentración |
+| **`I`** | **Índice Markdown (TOC):** Muestra u oculta la Tabla de Contenidos lateral al leer archivos `.md` |
+| **`/`** | Enfoca el **Buscador Rápido de Sintaxis y Conceptos** (`Escape` para volver al árbol) |
 | **`R`** | Re-ejecuta el kata o playground actual y muestra métricas en tiempo real |
 | **`P`** | **Modo Práctica:** Vacía las soluciones del kata actual (`TODO` / `NotImplementedError`) para resolverlo desde cero |
 | **`H`** | Muestra solo la **Guía de Sintaxis y Pistas** de cada ejercicio (sin spoilers de código) |
 | **`V`** | **Espiar Solución:** Muestra las soluciones de referencia en pantalla sin sobrescribir tu archivo |
-| **`S`** | **Restaurar Solución:** Restaura las soluciones oficiales (o plantilla base) en el archivo `.py` |
+| **`S`** | **Restaurar Solución:** Restaura las soluciones oficiales en el archivo `.py` |
 | **`A`** | Ejecuta la **Auditoría Global** de todos los módulos y muestra tu progreso |
 | **`C`** | Limpia la consola de salida |
 | **`Q`** | Salir |
